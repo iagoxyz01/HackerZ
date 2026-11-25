@@ -45,8 +45,11 @@ export default function App(){
  useEffect(()=>{if(screen==="question"&&seconds===0&&answer===null){setAnswer(-1);setFeedback("Tempo encerrado. Aguarde a próxima rodada.");}},[seconds,screen,answer]);
  useEffect(()=>{
    if(!db||!room)return;
-   const host=readSession("host",room),guest=readSession("player",room);
-   if(host?.token){setHostToken(host.token);setIsHost(true);setRoom(room);setNickname(host.nickname||"");setScreen("host");}
+   const lastRoom=sessionStorage.getItem("hackerz:lastRoom");
+   if(!lastRoom)return;
+   const host=readSession("host",lastRoom),guest=readSession("player",lastRoom);
+   setRoom(lastRoom);
+   if(host?.token){setHostToken(host.token);setIsHost(true);setNickname(host.nickname||"");setScreen("host");}
    else if(guest?.id&&guest?.token){setPlayer({id:guest.id,nickname:guest.nickname,score:0,credits:0,shield:0});setPlayerToken(guest.token);setNickname(guest.nickname);setScreen("lobby");}
  },[]);
  async function createRoom(){
@@ -59,7 +62,7 @@ export default function App(){
      const sessionToken=makeToken();
      const {data,error:joinError}=await db.rpc("hackerz_join_room",{p_code:code,p_nickname:nickname.trim(),p_session_token:sessionToken});
      if(joinError)throw joinError;
-     saveSession("host",code,{token,nickname:nickname.trim()});
+     saveSession("host",code,{token,nickname:nickname.trim()});sessionStorage.setItem("hackerz:lastRoom",code);
      saveSession("player",code,{id:data.id,token:sessionToken,nickname:data.nickname});
      setRoom(code);setHostToken(token);setPlayerToken(sessionToken);setPlayer(data);setIsHost(true);setScreen("host");showNotice("Sala criada. Compartilhe o código com os jogadores.");
    }catch(e){showNotice(e.message||"Não foi possível criar a sala.");}finally{setBusy(false);}
@@ -70,7 +73,7 @@ export default function App(){
    setBusy(true);try{
      const token=makeToken(),{data,error}=await db.rpc("hackerz_join_room",{p_code:room.trim().toUpperCase(),p_nickname:nickname.trim(),p_session_token:token});
      if(error)throw error;
-     saveSession("player",room.trim().toUpperCase(),{id:data.id,token,nickname:data.nickname});
+     saveSession("player",room.trim().toUpperCase(),{id:data.id,token,nickname:data.nickname});sessionStorage.setItem("hackerz:lastRoom",room.trim().toUpperCase());
      setPlayer(data);setPlayerToken(token);setRoom(room.trim().toUpperCase());setIsHost(false);setScreen("lobby");showNotice("Você entrou na sala.");
    }catch(e){showNotice(e.message||"Não foi possível entrar.");}finally{setBusy(false);}
  }
@@ -106,7 +109,7 @@ export default function App(){
  }
  const ordered=useMemo(()=>[...players].sort((a,b)=>(b.score||0)-(a.score||0)),[players]);
  const copyRoom=async()=>{try{await navigator.clipboard.writeText(room);showNotice("Código copiado.");}catch{showNotice("Código da sala: "+room);}};
- const logout=()=>{if(room){sessionStorage.removeItem(storeKey("host",room));sessionStorage.removeItem(storeKey("player",room));}setScreen("home");setRoom("");setPlayer(null);setHostToken("");setPlayerToken("");setIsHost(false);setQuestion(null);setAnswer(null);};
+ const logout=()=>{if(room){sessionStorage.removeItem(storeKey("host",room));sessionStorage.removeItem(storeKey("player",room));sessionStorage.removeItem("hackerz:lastRoom");}setScreen("home");setRoom("");setPlayer(null);setHostToken("");setPlayerToken("");setIsHost(false);setQuestion(null);setAnswer(null);};
  return <div className="app-shell">
   <header className="topbar"><a className="brand" href="#" onClick={e=>{e.preventDefault();if(screen==="home")return;showNotice("Sua sessão continua ativa nesta aba.");}}><img src="/hackerz-mark.svg" alt="HackerZ"/><span><b>HACKER<span>Z</span></b><small>THE DIGITAL UNDERWORLD</small></span></a>
    <div className="top-status"><i/>{db?"NETWORK ONLINE":"OFFLINE BUILD"}{room&&<button onClick={copyRoom}>ROOM // {room}</button>}</div>
