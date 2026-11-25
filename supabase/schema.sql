@@ -6,9 +6,17 @@ alter table public.rooms add column if not exists host_token_hash text;
 alter table public.players add column if not exists session_hash text;
 
 -- Hash legacy host tokens and immediately remove the plaintext column.
-update public.rooms set host_token_hash = encode(digest(host_token, 'sha256'), 'hex')
-where host_token_hash is null and host_token is not null;
-alter table public.rooms drop column if exists host_token;
+do $migration$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='rooms' and column_name='host_token'
+  ) then
+    execute $sql$update public.rooms set host_token_hash=encode(digest(host_token,'sha256'),'hex') where host_token_hash is null and host_token is not null$sql$;
+    alter table public.rooms drop column host_token;
+  end if;
+end
+$migration$;
 
 -- Legacy player rows remain visible in the roster, but cannot submit actions without a newly issued session token.
 alter table public.rooms alter column host_token_hash set not null;
@@ -30,6 +38,7 @@ grant select on public.room_state,public.player_roster to anon,authenticated;
 drop function if exists public.hackerz_create_room(text,text,jsonb);
 drop function if exists public.hackerz_join_room(text,text);
 drop function if exists public.hackerz_start_round(text,text,jsonb,int);
+drop function if exists public.hackerz_start_round(text,text,jsonb,int,int);
 drop function if exists public.hackerz_answer(uuid,int);
 drop function if exists public.hackerz_attack(uuid,uuid,text);
 drop function if exists public.hackerz_finish_room(text,text);
@@ -66,23 +75,24 @@ begin
   return jsonb_build_object('id',p.id,'nickname',p.nickname,'credits',p.credits,'score',p.score,'shield',p.shield);
 end $$;
 
-create or replace function public.hackerz_start_round(p_code text,p_host_token text,p_question jsonb,p_seconds int)
-returns jsonb language plpgsql security definer set search_path=public,extensions as $$
+create or replace function public.hackerz_start_round(p_code text,p_host_token text,p_question jsonb,p_seconds int,p_rounds int)
+returns jsonb language plpgsql security definer set search_path=public,extensions as $
 declare r rooms; next_round int; max_rounds int; secs int;
 begin
-  select * into r from rooms where code=upper(trim(p_code)) for update;
+  select * into r from public.rooms where code=upper(trim(p_code)) for update;
   if not found or r.host_token_hash <> encode(digest(coalesce(p_host_token,''),'sha256'),'hex') then raise exception 'Operador não autorizado'; end if;
   if r.state='finished' then raise exception 'Partida já encerrada'; end if;
-  max_rounds := least(greatest(coalesce((r.settings->>'rounds')::int,10),5),20);
+  max_rounds := least(greatest(coalesce(p_rounds,10),5),20);
   next_round := r.round_no+1;
   if next_round > max_rounds then raise exception 'Limite de rodadas atingido. Encerre a partida para ver o ranking.'; end if;
   if coalesce(p_question->>'prompt','')='' or jsonb_array_length(coalesce(p_question->'options','[]'::jsonb))<>4 then raise exception 'Pergunta inválida'; end if;
   if (p_question->>'correct')::int not between 0 and 3 then raise exception 'Alternativa correta inválida'; end if;
   secs := least(greatest(coalesce(p_seconds,20),10),60);
-  update rooms set state='playing',current_question=p_question,round_no=next_round,
+  update public.rooms set state='playing',current_question=p_question,round_no=next_round,
+    settings=jsonb_build_object('rounds',max_rounds,'seconds',secs),
     question_deadline=now()+make_interval(secs=>secs) where code=r.code;
   return jsonb_build_object('round_no',next_round,'deadline',now()+make_interval(secs=>secs));
-end $$;
+end $;
 
 create or replace function public.hackerz_answer(p_player_id uuid,p_session_token text,p_answer int)
 returns jsonb language plpgsql security definer set search_path=public,extensions as $$
@@ -129,7 +139,7 @@ revoke all on function public.hackerz_activate_shield(uuid,text) from public;
 revoke all on function public.hackerz_finish_room(text,text) from public;
 grant execute on function public.hackerz_create_room(text,text,jsonb) to anon,authenticated;
 grant execute on function public.hackerz_join_room(text,text,text) to anon,authenticated;
-grant execute on function public.hackerz_start_round(text,text,jsonb,int) to anon,authenticated;
+grant execute on function public.hackerz_start_round(text,text,jsonb,int,int) to anon,authenticated;
 grant execute on function public.hackerz_answer(uuid,text,int) to anon,authenticated;
 grant execute on function public.hackerz_activate_shield(uuid,text) to anon,authenticated;
 grant execute on function public.hackerz_finish_room(text,text) to anon,authenticated;
