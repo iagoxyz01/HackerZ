@@ -20,7 +20,7 @@ Sem credenciais Supabase, o modo de demonstração abre localmente; não sincron
 
 ## Ativar multiplayer
 1. Crie um projeto no Supabase.
-2. Execute `supabase/schema.sql` no SQL Editor.
+2. Execute `supabase/schema.sql` no SQL Editor. A migração atualiza o modelo de credenciais; jogadores que já estavam em salas antigas precisarão entrar em uma nova sala para receber uma sessão individual.
 3. Copie Project URL e anon/public key em Project Settings → API.
 4. Configure `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` no ambiente.
 5. Reinicie o servidor.
@@ -28,5 +28,13 @@ Sem credenciais Supabase, o modo de demonstração abre localmente; não sincron
 ## Publicação
 Importe o repositório na Vercel, cadastre as duas variáveis de ambiente e publique.
 
-## Atenção sobre segurança
-Esta é uma base avançada de MVP, ainda não auditada para produção pública. O próximo ciclo deve implementar identidade de sessão forte para jogadores, credenciais privadas separadas da tabela pública, recuperação/definição de senha de ataque, validação de identidade em cada RPC, encerramento automático de salas, sincronização completa de cronômetro e testes concorrentes. Nunca coloque a chave service-role no frontend. Antes de uso público, revise as políticas RLS e o modelo de autenticação.
+## Segurança e funcionamento
+- Tokens aleatórios por jogador e operador; o banco armazena hashes, não os tokens.
+- RPCs validam a sessão antes de aceitar respostas, pontuação ou ativação de blindagem.
+- O ID público do jogador, sozinho, não autoriza ações.
+- Limites de rodadas e tempo são verificados no backend.
+- O token de sessão é guardado no sessionStorage para permitir recarregar a aba; ele não deve ser compartilhado.
+- A mecânica antiga de adivinhar senha foi removida; a blindagem é uma habilidade fictícia do jogo.
+- Salas e sessões criadas antes da migração devem ser substituídas por novas salas para que cada participante receba uma credencial própria.
+
+Nunca coloque a chave service-role no frontend. A chave anon/public é a única chave Supabase esperada no navegador. Esta branch ainda precisa de execução real do SQL no projeto Supabase, build de produção e teste multiplayer antes de ser promovida para main.
