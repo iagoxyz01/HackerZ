@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.vercel/
+*.log
+.DS_Store
+
+# Variáveis locais nunca vão para o Git (somente o modelo .env.example).
+.env
+.env.*
+!.env.example
