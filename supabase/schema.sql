@@ -1,3 +1,5 @@
+begin;
+
 -- HackerZ security + gameplay migration
 -- Run this file in Supabase SQL Editor. Existing rooms are invalidated when host credentials rotate.
 create schema if not exists extensions;
@@ -152,3 +154,5 @@ grant execute on function public.hackerz_finish_room(text,text) to anon,authenti
 
 do $$ begin alter publication supabase_realtime add table public.rooms; exception when duplicate_object then null; end $$;
 do $$ begin alter publication supabase_realtime add table public.players; exception when duplicate_object then null; end $$;
+
+commit;
