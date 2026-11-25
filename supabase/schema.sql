@@ -10,11 +10,7 @@ update public.rooms set host_token_hash = encode(digest(host_token, 'sha256'), '
 where host_token_hash is null and host_token is not null;
 alter table public.rooms drop column if exists host_token;
 
--- Existing guest sessions cannot be safely recovered because the old schema had no player credential.
--- They are removed during this one-time migration to avoid leaving impersonable legacy rows.
-delete from public.players where session_hash is null;
-alter table public.players alter column session_hash set not null;
-
+-- Legacy player rows remain visible in the roster, but cannot submit actions without a newly issued session token.
 alter table public.rooms alter column host_token_hash set not null;
 
 alter table public.rooms drop constraint if exists rooms_state_check;
