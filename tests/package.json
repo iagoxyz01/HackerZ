@@ -1,0 +1,16 @@
+{
+  "name": "hackerz-tests",
+  "private": true,
+  "type": "module",
+  "description": "Testes do HackerZ: SQL (Postgres em WASM) e ponta a ponta (Chrome headless). Dependências isoladas para não pesar o build da Vercel.",
+  "scripts": {
+    "test": "npm run test:sql && npm run test:config && npm run test:e2e",
+    "test:sql": "node --test sql.test.mjs",
+    "test:config": "node config.mjs",
+    "test:e2e": "node e2e.mjs"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.6.0",
+    "puppeteer-core": "^24.0.0"
+  }
+}
