@@ -18,7 +18,7 @@ begin
     select 1 from information_schema.columns
     where table_schema='public' and table_name='rooms' and column_name='host_token'
   ) then
-    execute $sql$update public.rooms set host_token_hash=encode(digest(host_token,'sha256'),'hex') where host_token_hash is null and host_token is not null$sql$;
+    execute $sql$update public.rooms set host_token_hash=encode(extensions.digest(host_token,'sha256'),'hex') where host_token_hash is null and host_token is not null$sql$;
     alter table public.rooms drop column host_token;
   end if;
 end
@@ -51,7 +51,7 @@ drop function if exists public.hackerz_finish_room(text,text);
 drop function if exists public.hackerz_activate_shield(uuid,text);
 
 create or replace function public.hackerz_create_room(p_code text,p_host_token text,p_settings jsonb)
-returns jsonb language plpgsql security definer set search_path=public,extensions as $$
+returns jsonb language plpgsql security definer set search_path='' as $$
 declare clean_code text; rounds_limit int; seconds_limit int;
 begin
   clean_code := upper(trim(p_code));
@@ -60,14 +60,14 @@ begin
   rounds_limit := least(greatest(coalesce((p_settings->>'rounds')::int,10),5),20);
   seconds_limit := least(greatest(coalesce((p_settings->>'seconds')::int,20),10),60);
   insert into public.rooms(code,host_token_hash,settings)
-  values(clean_code,encode(digest(p_host_token,'sha256'),'hex'),
+  values(clean_code,encode(extensions.digest(p_host_token,'sha256'),'hex'),
     jsonb_build_object('rounds',rounds_limit,'seconds',seconds_limit));
   return jsonb_build_object('code',clean_code,'rounds',rounds_limit,'seconds',seconds_limit);
 end $$;
 
 create or replace function public.hackerz_join_room(p_code text,p_nickname text,p_session_token text)
-returns jsonb language plpgsql security definer set search_path=public,extensions as $$
-declare r rooms; p players; clean_name text;
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare r public.rooms; p public.players; clean_name text;
 begin
   clean_name := left(trim(coalesce(p_nickname,'')),18);
   if clean_name = '' then raise exception 'Informe um codinome'; end if;
@@ -76,17 +76,17 @@ begin
   if not found or r.state <> 'lobby' then raise exception 'Sala não encontrada ou já iniciada'; end if;
   if (select count(*) from public.players where room_code=r.code) >= 30 then raise exception 'Sala cheia'; end if;
   insert into public.players(room_code,nickname,session_hash,attack_hash)
-  values(r.code,clean_name,encode(digest(p_session_token,'sha256'),'hex'),encode(digest(gen_random_uuid()::text,'sha256'),'hex'))
+  values(r.code,clean_name,encode(extensions.digest(p_session_token,'sha256'),'hex'),encode(extensions.digest(pg_catalog.gen_random_uuid()::text,'sha256'),'hex'))
   returning * into p;
   return jsonb_build_object('id',p.id,'nickname',p.nickname,'credits',p.credits,'score',p.score,'shield',p.shield);
 end $$;
 
 create or replace function public.hackerz_start_round(p_code text,p_host_token text,p_question jsonb,p_seconds int,p_rounds int)
-returns jsonb language plpgsql security definer set search_path=public,extensions as $
-declare r rooms; next_round int; max_rounds int; secs int;
+returns jsonb language plpgsql security definer set search_path='' as $
+declare r public.rooms; next_round int; max_rounds int; secs int;
 begin
   select * into r from public.rooms where code=upper(trim(p_code)) for update;
-  if not found or r.host_token_hash <> encode(digest(coalesce(p_host_token,''),'sha256'),'hex') then raise exception 'Operador não autorizado'; end if;
+  if not found or r.host_token_hash <> encode(extensions.digest(coalesce(p_host_token,''),'sha256'),'hex') then raise exception 'Operador não autorizado'; end if;
   if r.state='finished' then raise exception 'Partida já encerrada'; end if;
   max_rounds := least(greatest(coalesce(p_rounds,10),5),20);
   next_round := r.round_no+1;
@@ -101,11 +101,11 @@ begin
 end $;
 
 create or replace function public.hackerz_answer(p_player_id uuid,p_session_token text,p_answer int)
-returns jsonb language plpgsql security definer set search_path=public,extensions as $$
-declare p players; r rooms; q jsonb; ok boolean; pts int; prior answers;
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare p public.players; r public.rooms; q jsonb; ok boolean; pts int;
 begin
   select * into p from public.players where id=p_player_id for update;
-  if not found or p.session_hash <> encode(digest(coalesce(p_session_token,''),'sha256'),'hex') then raise exception 'Sessão de jogador inválida'; end if;
+  if not found or p.session_hash <> encode(extensions.digest(coalesce(p_session_token,''),'sha256'),'hex') then raise exception 'Sessão de jogador inválida'; end if;
   select * into r from public.rooms where code=p.room_code for update;
   if r.state<>'playing' or r.question_deadline is null or r.question_deadline<now() then raise exception 'Tempo encerrado'; end if;
   if p_answer not between 0 and 3 then raise exception 'Resposta inválida'; end if;
@@ -118,20 +118,20 @@ begin
 end $$;
 
 create or replace function public.hackerz_activate_shield(p_player_id uuid,p_session_token text)
-returns jsonb language plpgsql security definer set search_path=public,extensions as $$
-declare p players;
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare p public.players;
 begin
-  select * into p from players where id=p_player_id for update;
-  if not found or p.session_hash <> encode(digest(coalesce(p_session_token,''),'sha256'),'hex') then raise exception 'Sessão de jogador inválida'; end if;
+  select * into p from public.players where id=p_player_id for update;
+  if not found or p.session_hash <> encode(extensions.digest(coalesce(p_session_token,''),'sha256'),'hex') then raise exception 'Sessão de jogador inválida'; end if;
   if p.credits<50 then raise exception 'Você precisa de 50 créditos para ativar a defesa'; end if;
-  update players set credits=credits-50,shield=shield+1 where id=p.id returning * into p;
+  update public.players set credits=credits-50,shield=shield+1 where id=p.id returning * into p;
   return jsonb_build_object('credits',p.credits,'shield',p.shield,'message','Blindagem digital ativada');
 end $$;
 
 create or replace function public.hackerz_finish_room(p_code text,p_host_token text)
-returns void language plpgsql security definer set search_path=public,extensions as $$
+returns void language plpgsql security definer set search_path='' as $$
 begin
-  if not exists(select 1 from public.rooms where code=upper(trim(p_code)) and host_token_hash=encode(digest(coalesce(p_host_token,''),'sha256'),'hex')) then
+  if not exists(select 1 from public.rooms where code=upper(trim(p_code)) and host_token_hash=encode(extensions.digest(coalesce(p_host_token,''),'sha256'),'hex')) then
     raise exception 'Operador não autorizado';
   end if;
   update public.rooms set state='finished' where code=upper(trim(p_code));
