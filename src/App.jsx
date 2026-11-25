@@ -44,12 +44,12 @@ export default function App(){
  useEffect(()=>{if(screen!=="question"||answer!==null)return;const timer=window.setInterval(()=>setSeconds(v=>Math.max(0,v-1)),1000);return()=>window.clearInterval(timer);},[screen,round,answer]);
  useEffect(()=>{if(screen==="question"&&seconds===0&&answer===null){setAnswer(-1);setFeedback("Tempo encerrado. Aguarde a próxima rodada.");}},[seconds,screen,answer]);
  useEffect(()=>{
-   if(!db||!room)return;
+   if(!db)return;
    const lastRoom=sessionStorage.getItem("hackerz:lastRoom");
    if(!lastRoom)return;
    const host=readSession("host",lastRoom),guest=readSession("player",lastRoom);
    setRoom(lastRoom);
-   if(host?.token){setHostToken(host.token);setIsHost(true);setNickname(host.nickname||"");setScreen("host");}
+   if(host?.token){setHostToken(host.token);setIsHost(true);setNickname(host.nickname||"");if(guest?.id&&guest?.token){setPlayer({id:guest.id,nickname:guest.nickname,score:0,credits:0,shield:0});setPlayerToken(guest.token);}setScreen("host");}
    else if(guest?.id&&guest?.token){setPlayer({id:guest.id,nickname:guest.nickname,score:0,credits:0,shield:0});setPlayerToken(guest.token);setNickname(guest.nickname);setScreen("lobby");}
  },[]);
  async function createRoom(){
