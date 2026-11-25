@@ -3,10 +3,14 @@ create table if not exists public.rooms(code text primary key check(length(code)
 create table if not exists public.players(id uuid primary key default gen_random_uuid(),room_code text not null references public.rooms(code) on delete cascade,nickname text not null check(length(nickname) between 1 and 18),attack_hash text not null,credits int not null default 0,score int not null default 0,shield int not null default 0,created_at timestamptz not null default now(),unique(room_code,nickname));
 create table if not exists public.answers(id bigint generated always as identity primary key,player_id uuid not null references public.players(id) on delete cascade,round_no int not null,is_correct boolean not null,unique(player_id,round_no));
 alter table public.rooms enable row level security;alter table public.players enable row level security;alter table public.answers enable row level security;
-create policy "read room state" on public.rooms for select using(true);
-create policy "read player roster" on public.players for select using(true);
+drop policy if exists "read room state" on public.rooms;drop policy if exists "read player roster" on public.players;
 revoke all on public.rooms,public.players,public.answers from anon,authenticated;
-grant select on public.rooms,public.players to anon,authenticated;
+drop view if exists public.room_state;drop view if exists public.player_roster;
+create view public.room_state with (security_barrier=true) as select code,state,(current_question-'correct') as current_question,question_deadline,round_no,settings,created_at from public.rooms;
+create view public.player_roster with (security_barrier=true) as select id,room_code,nickname,credits,score,shield,created_at from public.players;
+grant select on public.room_state,public.player_roster to anon,authenticated;
+create or replace function public.hackerz_create_room(p_code text,p_host_token text,p_settings jsonb) returns void language plpgsql security definer set search_path=public as $$
+begin insert into rooms(code,host_token,settings) values(upper(p_code),p_host_token,coalesce(p_settings,'{"rounds":10,"seconds":20}'::jsonb));end $$;
 create or replace function public.hackerz_join_room(p_code text,p_nickname text) returns jsonb language plpgsql security definer set search_path=public as $$
 declare r rooms;p players;
 begin select * into r from rooms where code=upper(p_code) for update;
@@ -38,5 +42,6 @@ if t.shield>0 then update players set shield=shield-1 where id=t.id;return jsonb
 update players set credits=greatest(0,credits-100) where id=t.id;update players set credits=credits+100,score=score+100 where id=a.id;
 return jsonb_build_object('success',true,'message','Invasão bem-sucedida: +100 créditos.');end if;
 return jsonb_build_object('success',false,'message','Senha incorreta. 50 créditos consumidos.');end $$;
-grant execute on function public.hackerz_join_room(text,text),public.hackerz_start_round(text,text,jsonb,int),public.hackerz_answer(uuid,int),public.hackerz_attack(uuid,uuid,text) to anon,authenticated;
-alter publication supabase_realtime add table public.rooms;alter publication supabase_realtime add table public.players;
+grant execute on function public.hackerz_create_room(text,text,jsonb),public.hackerz_join_room(text,text),public.hackerz_start_round(text,text,jsonb,int),public.hackerz_answer(uuid,int),public.hackerz_attack(uuid,uuid,text) to anon,authenticated;
+do $$ begin alter publication supabase_realtime add table public.rooms; exception when duplicate_object then null; end $$;
+do $$ begin alter publication supabase_realtime add table public.players; exception when duplicate_object then null; end $$;
