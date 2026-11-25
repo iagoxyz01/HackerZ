@@ -82,7 +82,7 @@ begin
 end $$;
 
 create or replace function public.hackerz_start_round(p_code text,p_host_token text,p_question jsonb,p_seconds int,p_rounds int)
-returns jsonb language plpgsql security definer set search_path='' as $
+returns jsonb language plpgsql security definer set search_path='' as $$
 declare r public.rooms; next_round int; max_rounds int; secs int;
 begin
   select * into r from public.rooms where code=upper(trim(p_code)) for update;
@@ -98,7 +98,7 @@ begin
     settings=jsonb_build_object('rounds',max_rounds,'seconds',secs),
     question_deadline=now()+make_interval(secs=>secs) where code=r.code;
   return jsonb_build_object('round_no',next_round,'deadline',now()+make_interval(secs=>secs));
-end $;
+end $$;
 
 create or replace function public.hackerz_answer(p_player_id uuid,p_session_token text,p_answer int)
 returns jsonb language plpgsql security definer set search_path='' as $$
