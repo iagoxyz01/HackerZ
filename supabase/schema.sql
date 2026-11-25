@@ -45,3 +45,7 @@ return jsonb_build_object('success',false,'message','Senha incorreta. 50 crédit
 grant execute on function public.hackerz_create_room(text,text,jsonb),public.hackerz_join_room(text,text),public.hackerz_start_round(text,text,jsonb,int),public.hackerz_answer(uuid,int),public.hackerz_attack(uuid,uuid,text) to anon,authenticated;
 do $$ begin alter publication supabase_realtime add table public.rooms; exception when duplicate_object then null; end $$;
 do $$ begin alter publication supabase_realtime add table public.players; exception when duplicate_object then null; end $$;
+
+create or replace function public.hackerz_finish_room(p_code text,p_host_token text) returns void language plpgsql security definer set search_path=public as $$
+begin if not exists(select 1 from rooms where code=upper(p_code) and host_token=p_host_token) then raise exception 'Operador não autorizado';end if;update rooms set state='finished' where code=upper(p_code);end $$;
+grant execute on function public.hackerz_finish_room(text,text) to anon,authenticated;
