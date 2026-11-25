@@ -1,6 +1,12 @@
 -- HackerZ security + gameplay migration
 -- Run this file in Supabase SQL Editor. Existing rooms are invalidated when host credentials rotate.
-create extension if not exists pgcrypto;
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
+do $ext$ begin
+  if exists (select 1 from pg_extension e join pg_namespace n on n.oid=e.extnamespace where e.extname='pgcrypto' and n.nspname<>'extensions') then
+    alter extension pgcrypto set schema extensions;
+  end if;
+end $ext$;
 
 alter table public.rooms add column if not exists host_token_hash text;
 alter table public.players add column if not exists session_hash text;
@@ -53,7 +59,7 @@ begin
   if length(coalesce(p_host_token,'')) < 40 then raise exception 'Credencial do operador inválida'; end if;
   rounds_limit := least(greatest(coalesce((p_settings->>'rounds')::int,10),5),20);
   seconds_limit := least(greatest(coalesce((p_settings->>'seconds')::int,20),10),60);
-  insert into rooms(code,host_token_hash,settings)
+  insert into public.rooms(code,host_token_hash,settings)
   values(clean_code,encode(digest(p_host_token,'sha256'),'hex'),
     jsonb_build_object('rounds',rounds_limit,'seconds',seconds_limit));
   return jsonb_build_object('code',clean_code,'rounds',rounds_limit,'seconds',seconds_limit);
@@ -66,10 +72,10 @@ begin
   clean_name := left(trim(coalesce(p_nickname,'')),18);
   if clean_name = '' then raise exception 'Informe um codinome'; end if;
   if length(coalesce(p_session_token,'')) < 40 then raise exception 'Credencial de jogador inválida'; end if;
-  select * into r from rooms where code=upper(trim(p_code)) for update;
+  select * into r from public.rooms where code=upper(trim(p_code)) for update;
   if not found or r.state <> 'lobby' then raise exception 'Sala não encontrada ou já iniciada'; end if;
-  if (select count(*) from players where room_code=r.code) >= 30 then raise exception 'Sala cheia'; end if;
-  insert into players(room_code,nickname,session_hash,attack_hash)
+  if (select count(*) from public.players where room_code=r.code) >= 30 then raise exception 'Sala cheia'; end if;
+  insert into public.players(room_code,nickname,session_hash,attack_hash)
   values(r.code,clean_name,encode(digest(p_session_token,'sha256'),'hex'),encode(digest(gen_random_uuid()::text,'sha256'),'hex'))
   returning * into p;
   return jsonb_build_object('id',p.id,'nickname',p.nickname,'credits',p.credits,'score',p.score,'shield',p.shield);
@@ -98,16 +104,16 @@ create or replace function public.hackerz_answer(p_player_id uuid,p_session_toke
 returns jsonb language plpgsql security definer set search_path=public,extensions as $$
 declare p players; r rooms; q jsonb; ok boolean; pts int; prior answers;
 begin
-  select * into p from players where id=p_player_id for update;
+  select * into p from public.players where id=p_player_id for update;
   if not found or p.session_hash <> encode(digest(coalesce(p_session_token,''),'sha256'),'hex') then raise exception 'Sessão de jogador inválida'; end if;
-  select * into r from rooms where code=p.room_code for update;
+  select * into r from public.rooms where code=p.room_code for update;
   if r.state<>'playing' or r.question_deadline is null or r.question_deadline<now() then raise exception 'Tempo encerrado'; end if;
   if p_answer not between 0 and 3 then raise exception 'Resposta inválida'; end if;
-  if exists(select 1 from answers where player_id=p.id and round_no=r.round_no) then raise exception 'Resposta já enviada'; end if;
+  if exists(select 1 from public.answers where player_id=p.id and round_no=r.round_no) then raise exception 'Resposta já enviada'; end if;
   q:=r.current_question; ok:=p_answer=(q->>'correct')::int;
   pts:=case when ok then coalesce((q->>'points')::int,100) else 0 end;
-  insert into answers(player_id,round_no,is_correct) values(p.id,r.round_no,ok);
-  update players set score=score+pts,credits=credits+pts where id=p.id;
+  insert into public.answers(player_id,round_no,is_correct) values(p.id,r.round_no,ok);
+  update public.players set score=score+pts,credits=credits+pts where id=p.id;
   return jsonb_build_object('correct',ok,'points',pts,'explanation',q->>'explanation','round_no',r.round_no);
 end $$;
 
@@ -125,15 +131,15 @@ end $$;
 create or replace function public.hackerz_finish_room(p_code text,p_host_token text)
 returns void language plpgsql security definer set search_path=public,extensions as $$
 begin
-  if not exists(select 1 from rooms where code=upper(trim(p_code)) and host_token_hash=encode(digest(coalesce(p_host_token,''),'sha256'),'hex')) then
+  if not exists(select 1 from public.rooms where code=upper(trim(p_code)) and host_token_hash=encode(digest(coalesce(p_host_token,''),'sha256'),'hex')) then
     raise exception 'Operador não autorizado';
   end if;
-  update rooms set state='finished' where code=upper(trim(p_code));
+  update public.rooms set state='finished' where code=upper(trim(p_code));
 end $$;
 
 revoke all on function public.hackerz_create_room(text,text,jsonb) from public;
 revoke all on function public.hackerz_join_room(text,text,text) from public;
-revoke all on function public.hackerz_start_round(text,text,jsonb,int) from public;
+revoke all on function public.hackerz_start_round(text,text,jsonb,int,int) from public;
 revoke all on function public.hackerz_answer(uuid,text,int) from public;
 revoke all on function public.hackerz_activate_shield(uuid,text) from public;
 revoke all on function public.hackerz_finish_room(text,text) from public;
