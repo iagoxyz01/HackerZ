@@ -79,7 +79,7 @@ export default function App(){
    if(round>=(settings.rounds||10))return finishRoom();
    const level=LEVELS[Math.floor(Math.random()*LEVELS.length)].id,next=pickQuestion(level,used);
    setBusy(true);try{
-     const {error}=await db.rpc("hackerz_start_round",{p_code:room,p_host_token:hostToken,p_question:next,p_seconds:settings.seconds});
+     const {error}=await db.rpc("hackerz_start_round",{p_code:room,p_host_token:hostToken,p_question:next,p_seconds:settings.seconds,p_rounds:settings.rounds});
      if(error)throw error;
      setUsed(v=>[...v,next.id]);lastRound.current=0;await syncRoom();
    }catch(e){showNotice(e.message||"Não foi possível iniciar a rodada.");}finally{setBusy(false);}
